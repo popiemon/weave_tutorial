@@ -4,8 +4,11 @@ import os
 
 import numpy as np
 import weave
+from dotenv import load_dotenv
 from openai import OpenAI
 from weave import Model
+
+load_dotenv()
 
 # Examples we've gathered that we want to use for evaluations
 articles = [
@@ -20,11 +23,14 @@ articles = [
 
 
 def docs_to_embeddings(docs: list) -> list:
-    openai = OpenAI()
+    openai = OpenAI(
+        base_url=os.getenv("OLLAMA_BASE_URL"),
+        api_key="ollama",
+    )
     document_embeddings = []
     for doc in docs:
         response = (
-            openai.embeddings.create(input=doc, model="text-embedding-3-small")
+            openai.embeddings.create(input=doc, model="nomic-embed-text")
             .data[0]
             .embedding
         )
@@ -40,9 +46,12 @@ article_embeddings = docs_to_embeddings(
 # We've added a decorator to our retrieval step
 @weave.op()
 def get_most_relevant_document(query):
-    openai = OpenAI()
+    openai = OpenAI(
+        base_url=os.getenv("OLLAMA_BASE_URL"),
+        api_key="ollama",
+    )
     query_embedding = (
-        openai.embeddings.create(input=query, model="text-embedding-3-small")
+        openai.embeddings.create(input=query, model="nomic-embed-text")
         .data[0]
         .embedding
     )
@@ -59,7 +68,7 @@ def get_most_relevant_document(query):
 # We create a Model subclass with some details about our app, along with a predict function that produces a response
 class RAGModel(Model):
     system_message: str
-    model_name: str = os.environ["OLLAMA_MODEL"]
+    model_name: str = os.getenv("OLLAMA_MODEL")
 
     @weave.op()
     def predict(
@@ -71,7 +80,7 @@ class RAGModel(Model):
 
         context = get_most_relevant_document(question)
         client = OpenAI(
-            base_url=os.environ["OLLAMA_BASE_URL"],
+            base_url=os.getenv("OLLAMA_BASE_URL"),
             api_key="ollama",
         )
         query = f"""Use the following information to answer the subsequent question. If the answer cannot be found, write "I don't know."
@@ -109,7 +118,10 @@ async def context_precision_score(question, output):
     context: {context}
     answer: {answer}
     verdict: """
-    client = OpenAI()
+    client = OpenAI(
+        base_url=os.getenv("OLLAMA_BASE_URL"),
+        api_key="ollama",
+    )
 
     prompt = context_precision_prompt.format(
         question=question,
@@ -118,7 +130,7 @@ async def context_precision_score(question, output):
     )
 
     response = client.chat.completions.create(
-        model="gpt-4-turbo-preview",
+        model=os.getenv("OLLAMA_JUDGE_MODEL"),
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
     )
